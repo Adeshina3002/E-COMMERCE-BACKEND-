@@ -1,5 +1,8 @@
 const asyncHandler = require('express-async-handler');
 const Order = require('../models/order.model');
+const Product = require('../models/product.model');
+const calculateTotalPrice = require('../utils/index')
+const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 
 // Create Order
 const createOrder = asyncHandler(async (req, res) => {
@@ -97,9 +100,52 @@ const updateOrder = asyncHandler(async (req, res) => {
   res.status(200).json({ message: 'Order updated successfully' });
 });
 
+// Pay with stripe
+const payWithStripe = asyncHandler(async (req, res) => {
+  const { items, shipping, description, coupon } = req.body;
+
+  const products = await Product.find()
+
+  let orderAmount;
+  orderAmount = calculateTotalPrice(products, items)
+
+  if(coupon !== null && coupon?.name !== 'nil') {
+    let totalAfterDiscount = 
+    orderAmount - (orderAmount * coupon.discount) / 100
+    orderAmount = totalAfterDiscount
+  }
+
+  // Create a PaymentIntent with the order amount and currency
+  const paymentIntent = await stripe.paymentIntents.create({
+    amount: orderAmount,
+    currency: "usd",
+    // In the latest version of the API, specifying the `automatic_payment_methods` parameter is optional because Stripe enables its functionality by default.
+    automatic_payment_methods: {
+      enabled: true,
+    },
+    description,
+    shipping: {
+      address: {
+        line1: shipping.lin1,
+        line2: shipping.lin2,
+        city: shipping.city,
+        country: shipping.country,
+        postal_code: shipping.postal_code,
+      },
+      name: shipping.name ,
+      phone: shipping.phone, 
+    }
+  });
+
+  res.send({
+    clientSecret: paymentIntent.client_secret,
+  });
+})
+
 module.exports = {
   createOrder,
   getOrders,
   getOrder,
   updateOrder,
+  payWithStripe,
 };
